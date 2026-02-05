@@ -1,8 +1,46 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { designSystem } from "../styles/design-system";
 import type { ProxyGroup } from "../lib/ini-parser";
 import Sortable from "sortablejs";
+
+// Convert flag emojis to Twemoji SVG images
+function renderWithTwemoji(text: string): ReturnType<typeof html> {
+  // Find flag emojis by iterating through code points
+  let result = text;
+  const processedFlags: string[] = [];
+
+  // Convert to array of code points to properly handle surrogate pairs
+  const chars = [...text];
+
+  for (let i = 0; i < chars.length - 1; i++) {
+    const cp1 = chars[i].codePointAt(0);
+    const cp2 = chars[i + 1].codePointAt(0);
+
+    // Regional Indicator Symbol Letters: U+1F1E6 to U+1F1FF
+    if (
+      cp1 &&
+      cp2 &&
+      cp1 >= 0x1f1e6 &&
+      cp1 <= 0x1f1ff &&
+      cp2 >= 0x1f1e6 &&
+      cp2 <= 0x1f1ff
+    ) {
+      const flag = chars[i] + chars[i + 1];
+      if (!processedFlags.includes(flag)) {
+        processedFlags.push(flag);
+        const cpStr = cp1.toString(16) + "-" + cp2.toString(16);
+        const imgUrl = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${cpStr}.svg`;
+        const imgTag = `<img src="${imgUrl}" alt="${flag}" class="twemoji" style="height:1.2em;width:1.2em;vertical-align:-0.2em;margin:0 0.1em;">`;
+        result = result.split(flag).join(imgTag);
+      }
+      i++; // Skip the next character
+    }
+  }
+
+  return html`${unsafeHTML(result)}`;
+}
 
 @customElement("proxy-group-card")
 export class ProxyGroupCard extends LitElement {
@@ -145,7 +183,7 @@ export class ProxyGroupCard extends LitElement {
                   class="name"
                   @click=${() => (this.isEditing = true)}
                   title="Click to rename"
-                  >${this.group.name}</span
+                  >${renderWithTwemoji(this.group.name)}</span
                 >`}
             <span
               class="badge"
@@ -218,7 +256,7 @@ export class ProxyGroupCard extends LitElement {
                     class="ph ph-arrows-out-card handle"
                     style="cursor: grab; opacity: 0.5; font-size: 12px; margin-right: 2px;"
                   ></i>
-                  ${p}
+                  ${renderWithTwemoji(p)}
                   <span
                     class="remove-btn"
                     @click=${() => this.removeMember("[]" + p)}

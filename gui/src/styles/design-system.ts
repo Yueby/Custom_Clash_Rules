@@ -29,6 +29,12 @@ export const designSystem = css`
     --spacing-md: 16px;
 
     --shadow-card: 0 2px 5px rgba(0, 0, 0, 0.2);
+
+    /* Font stack with emoji support */
+    --font-family:
+      "Segoe UI", system-ui, -apple-system, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Noto Color Emoji";
+    font-family: var(--font-family);
   }
 
   /* Universal Scrollbar */

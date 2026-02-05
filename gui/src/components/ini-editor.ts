@@ -51,6 +51,15 @@ declare global {
   interface HTMLElementEventMap {
     "update-group": CustomEvent<{ group: ProxyGroup; originalName: string }>;
   }
+  // Twemoji global
+  interface Window {
+    twemoji: {
+      parse: (
+        node: HTMLElement | string,
+        options?: { folder?: string; ext?: string; className?: string },
+      ) => string;
+    };
+  }
 }
 
 @customElement("ini-editor")
@@ -114,6 +123,25 @@ export class IniEditor extends LitElement {
   firstUpdated() {
     const sections = this.shadowRoot?.querySelector(".sections");
     if (sections) autoAnimate(sections as HTMLElement);
+    this.parseEmojis();
+  }
+
+  updated() {
+    this.parseEmojis();
+  }
+
+  private parseEmojis() {
+    // Use Twemoji to render flag emojis as images
+    if (window.twemoji && this.shadowRoot) {
+      const previewContent = this.shadowRoot.querySelector(".preview-content");
+      if (previewContent) {
+        window.twemoji.parse(previewContent as HTMLElement, {
+          folder: "svg",
+          ext: ".svg",
+          className: "twemoji",
+        });
+      }
+    }
   }
 
   toggleSection(name: string) {
@@ -500,6 +528,13 @@ export class IniEditor extends LitElement {
         font-family: "Segoe UI", system-ui, sans-serif;
         background: var(--color-bg-base);
         color: var(--color-text-primary);
+      }
+      /* Twemoji emoji images */
+      .twemoji {
+        height: 1.2em;
+        width: 1.2em;
+        vertical-align: -0.2em;
+        margin: 0 0.1em;
       }
       .app-container {
         display: flex;
