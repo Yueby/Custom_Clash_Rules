@@ -141,4 +141,46 @@ export class SubconverterIniParser {
 
     return { name, type, proxies, testUrl, interval };
   }
+
+  static stringify(sections: IniSection[]): string {
+    let output = "";
+
+    for (const section of sections) {
+      if (section.name !== "Global") {
+        output += `\n[${section.name}]\n`;
+      }
+
+      // 1. Config Map
+      for (const [key, value] of section.config) {
+        output += `${key}=${value}\n`;
+      }
+
+      // 2. Rulesets
+      for (const ruleset of section.rulesets) {
+        let line = `ruleset=${ruleset.name},${ruleset.source}`;
+        if (ruleset.interval) {
+          line += `,${ruleset.interval}`;
+        }
+        output += `${line}\n`;
+      }
+
+      // 3. Proxy Groups
+      for (const group of section.proxyGroups) {
+        // Format: custom_proxy_group=Name`Type`Proxy1`Proxy2`...[`TestURL`Interval]
+        const parts = [group.name, group.type, ...group.proxies];
+
+        if (group.type === "url-test" && group.testUrl && group.interval) {
+          parts.push(group.testUrl);
+          parts.push(group.interval);
+          if (group.tolerance) {
+            parts.push(group.tolerance);
+          }
+        }
+
+        output += `custom_proxy_group=${parts.join("`")}\n`;
+      }
+    }
+
+    return output.trim();
+  }
 }
