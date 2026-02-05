@@ -22,6 +22,16 @@ export interface ProxyGroup {
   tolerance?: string; // For url-test
 }
 
+/** 代理组类型选项 */
+export const PROXY_GROUP_TYPES = [
+  { value: "select", label: "手动选择", description: "手动切换节点" },
+  { value: "url-test", label: "自动测速", description: "自动选择延迟最低的节点" },
+  { value: "load-balance", label: "负载均衡", description: "将请求分散到多个节点" },
+  { value: "fallback", label: "故障转移", description: "按顺序尝试节点直到可用" },
+] as const;
+
+export type ProxyGroupType = (typeof PROXY_GROUP_TYPES)[number]["value"];
+
 export class SubconverterIniParser {
   static parse(content: string): IniSection[] {
     const lines = content.split(/\r?\n/);
@@ -88,11 +98,7 @@ export class SubconverterIniParser {
     const interval = parts[2];
 
     let type: Ruleset["type"] = "remote";
-    if (
-      source.includes("[]GEOSITE") ||
-      source.includes("[]GEOIP") ||
-      source.includes("[]FINAL")
-    ) {
+    if (source.includes("[]GEOSITE") || source.includes("[]GEOIP") || source.includes("[]FINAL")) {
       type = "builtin";
     } else if (source.startsWith("http")) {
       type = "remote";

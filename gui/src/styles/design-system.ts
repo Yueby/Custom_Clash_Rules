@@ -21,6 +21,14 @@ export const designSystem = css`
     --color-type-auto: #4cc94c;
     --color-type-auto-bg: rgba(76, 201, 76, 0.15);
 
+    /* 新增语义化变量 */
+    --color-bg-toolbar: #1f1f1f;
+    --color-bg-input: #111;
+    --color-bg-button: #333;
+    --color-danger: #ff6b6b;
+    --color-warning: #f59e0b;
+    --color-success: #4ade80;
+
     --radius-sm: 4px;
     --radius-md: 6px;
 
