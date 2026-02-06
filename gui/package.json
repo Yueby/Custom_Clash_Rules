@@ -9,10 +9,13 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@formkit/auto-animate": "^0.9.0",
+    "@lit-labs/virtualizer": "^2.1.1",
     "@nanostores/lit": "^0.2.3",
     "@phosphor-icons/web": "^2.1.2",
     "lit": "^3.3.1",
@@ -27,7 +30,8 @@
     "eslint": "^9.0.0",
     "prettier": "^3.5.0",
     "typescript": "~5.9.3",
-    "vite": "npm:rolldown-vite@7.2.5"
+    "vite": "npm:rolldown-vite@7.2.5",
+    "vitest": "^4.0.18"
   },
   "pnpm": {
     "overrides": {

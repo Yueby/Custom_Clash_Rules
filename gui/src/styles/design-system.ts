@@ -15,11 +15,21 @@ export const designSystem = css`
     --color-accent: #0078d4;
     --color-accent-hover: #106ebe;
 
-    --color-type-select: #3794ff;
-    --color-type-select-bg: rgba(55, 148, 255, 0.15);
+    --color-type-select: #60a5fa;
+    --color-type-select-bg: rgba(96, 165, 250, 0.15);
 
-    --color-type-auto: #4cc94c;
-    --color-type-auto-bg: rgba(76, 201, 76, 0.15);
+    --color-type-auto: #f472b6;
+    --color-type-auto-bg: rgba(244, 114, 182, 0.15);
+
+    /* 规则类型颜色 */
+    --color-type-remote: #34d399;
+    --color-type-remote-bg: rgba(52, 211, 153, 0.15);
+
+    --color-type-builtin: #a78bfa;
+    --color-type-builtin-bg: rgba(167, 139, 250, 0.15);
+
+    --color-type-local: #fbbf24;
+    --color-type-local-bg: rgba(251, 191, 36, 0.15);
 
     /* 新增语义化变量 */
     --color-bg-toolbar: #1f1f1f;
@@ -40,8 +50,8 @@ export const designSystem = css`
 
     /* Font stack with emoji support */
     --font-family:
-      "Segoe UI", system-ui, -apple-system, sans-serif, "Apple Color Emoji",
-      "Segoe UI Emoji", "Noto Color Emoji";
+      "Segoe UI", system-ui, -apple-system, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+      "Noto Color Emoji";
     font-family: var(--font-family);
   }
 

@@ -19,8 +19,18 @@ export const isDirtyAtom = atom<boolean>(false);
 export const statusAtom = atom<string>("");
 export const isLoadingAtom = atom<boolean>(false);
 export const searchTermAtom = atom<string>(""); // Global search state shared by components
-export const historyAtom = atom<string[]>([]);
-export const futureAtom = atom<string[]>([]);
+
+// 历史记录类型
+interface HistoryEntry {
+  content: string;
+  label: string;
+}
+export const historyAtom = atom<HistoryEntry[]>([]);
+export const futureAtom = atom<HistoryEntry[]>([]);
+
+// Undo/Redo 状态
+export const canUndoAtom = computed(historyAtom, (h) => h.length > 0);
+export const canRedoAtom = computed(futureAtom, (f) => f.length > 0);
 
 // --- Computed: Derived State ---
 
@@ -84,13 +94,39 @@ export const rulesetStatsAtom = computed(allRulesetsAtom, (rulesets) => {
   return { total, byType, byGroup };
 });
 
-// --- Actions ---
+/** 悬空引用：检测指向不存在组的成员引用 */
+export interface OrphanReference {
+  groupName: string;
+  orphanRef: string;
+}
+
+export const orphanReferencesAtom = computed(
+  [sectionsAtom, allProxyGroupsAtom],
+  (sections, groups) => {
+    const groupNames = new Set(groups.map((g) => g.name));
+    const orphans: OrphanReference[] = [];
+
+    for (const section of sections) {
+      for (const g of section.proxyGroups) {
+        for (const proxy of g.proxies) {
+          if (proxy.startsWith("[]")) {
+            const refName = proxy.slice(2);
+            if (!groupNames.has(refName) && refName !== "DIRECT" && refName !== "REJECT") {
+              orphans.push({ groupName: g.name, orphanRef: refName });
+            }
+          }
+        }
+      }
+    }
+    return orphans;
+  }
+);
 
 // Helper to mutate model and sync back to text
 // This ensures atomicity: Model Change -> Text Update -> Compute New Model
 function mutateModel(mutationFn: (sections: IniSection[]) => void, statusMsg: string) {
-  // 0. Push to History
-  pushHistory();
+  // 0. Push to History with operation label
+  pushHistory(statusMsg);
 
   // 1. Get current model (snapshot)
   // We use structuredClone to ensure we don't mutate the computed readonly object directly
@@ -156,12 +192,44 @@ function detectCycle(
   return null;
 }
 
+/**
+ * 重命名组时同步更新所有引用
+ * - 更新其他组的 proxies 成员引用
+ * - 更新 rulesets 的目标组名
+ */
+function renameGroupReferences(sections: IniSection[], oldName: string, newName: string): number {
+  let count = 0;
+  const oldRef = "[]" + oldName;
+  const newRef = "[]" + newName;
+
+  for (const section of sections) {
+    // 1. 更新 proxyGroups 的成员引用
+    for (const group of section.proxyGroups) {
+      const idx = group.proxies.indexOf(oldRef);
+      if (idx !== -1) {
+        group.proxies[idx] = newRef;
+        count++;
+      }
+    }
+
+    // 2. 更新 rulesets 的目标组名
+    for (const ruleset of section.rulesets) {
+      if (ruleset.name === oldName) {
+        ruleset.name = newName;
+        count++;
+      }
+    }
+  }
+
+  return count;
+}
+
 // Helper: History
-function pushHistory() {
+function pushHistory(label: string) {
   const current = contentAtom.get();
   const history = historyAtom.get();
   // Limit history to 50 steps
-  historyAtom.set([...history.slice(-49), current]);
+  historyAtom.set([...history.slice(-49), { content: current, label }]);
   futureAtom.set([]);
 }
 
@@ -176,11 +244,12 @@ export const actions = {
 
     // Push current to future
     const current = contentAtom.get();
-    futureAtom.set([current, ...futureAtom.get()]);
+    futureAtom.set([{ content: current, label: previous.label }, ...futureAtom.get()]);
 
     historyAtom.set(newHistory);
-    contentAtom.set(previous);
-    toast.success("Undo");
+    contentAtom.set(previous.content);
+    isDirtyAtom.set(true);
+    toast.success(`撤销: ${previous.label}`);
   },
 
   redo() {
@@ -192,11 +261,12 @@ export const actions = {
 
     // Push current to history
     const current = contentAtom.get();
-    historyAtom.set([...historyAtom.get(), current]);
+    historyAtom.set([...historyAtom.get(), { content: current, label: next.label }]);
 
     futureAtom.set(newFuture);
-    contentAtom.set(next);
-    toast.success("Redo");
+    contentAtom.set(next.content);
+    isDirtyAtom.set(true);
+    toast.success(`重做: ${next.label}`);
   },
 
   // --- File Operations ---
@@ -315,13 +385,11 @@ export const actions = {
   updateGroup(group: ProxyGroup, originalName?: string) {
     // If originalName is NOT provided, assume name hasn't changed or it's same
     const targetName = originalName || group.name;
+    const isRenaming = group.name !== targetName;
 
     // Name Collision Check
     const allGroups = allProxyGroupsAtom.get();
-    if (
-      group.name !== targetName && // Changing name
-      allGroups.some((g) => g.name === group.name)
-    ) {
+    if (isRenaming && allGroups.some((g) => g.name === group.name)) {
       toast.error(`组名 "${group.name}" 已存在，请使用其他名称`);
       return;
     }
@@ -329,16 +397,25 @@ export const actions = {
     // Cyclic Dependency Check
     const cycle = detectCycle(group.name, group.proxies, allGroups);
     if (cycle) {
-      toast.error(`监测到循环引用: ${group.name} -> ... -> ${cycle} -> ${group.name}`);
+      toast.error(`检测到循环引用: ${group.name} -> ... -> ${cycle} -> ${group.name}`);
       return;
     }
 
     mutateModel((sections) => {
+      // 1. 更新组本身
       for (const section of sections) {
         const idx = section.proxyGroups.findIndex((g) => g.name === targetName);
         if (idx !== -1) {
           section.proxyGroups[idx] = group;
           break;
+        }
+      }
+
+      // 2. 同步更新所有引用
+      if (isRenaming) {
+        const refCount = renameGroupReferences(sections, targetName, group.name);
+        if (refCount > 0) {
+          toast.success(`已同步更新 ${refCount} 处引用`);
         }
       }
     }, "已修改 (更新组)");
@@ -347,15 +424,33 @@ export const actions = {
   },
 
   deleteGroup(groupName: string) {
-    if (!confirm(`确定要删除代理组 "${groupName}" 吗？`)) return;
+    if (!confirm(`确定要删除代理组 "${groupName}" 吗？\n\n注：其他组中对此组的引用也将被移除`))
+      return;
 
     mutateModel((sections) => {
+      // 1. 删除组本身
       for (const section of sections) {
         const idx = section.proxyGroups.findIndex((g) => g.name === groupName);
         if (idx !== -1) {
           section.proxyGroups.splice(idx, 1);
           break;
         }
+      }
+
+      // 2. 清理所有引用
+      const memberRef = "[]" + groupName;
+      let cleanedCount = 0;
+      for (const section of sections) {
+        for (const group of section.proxyGroups) {
+          const idx = group.proxies.indexOf(memberRef);
+          if (idx !== -1) {
+            group.proxies.splice(idx, 1);
+            cleanedCount++;
+          }
+        }
+      }
+      if (cleanedCount > 0) {
+        toast.success(`已清理 ${cleanedCount} 处引用`);
       }
     }, "已修改 (删除组)");
 

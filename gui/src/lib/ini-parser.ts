@@ -22,6 +22,66 @@ export interface ProxyGroup {
   tolerance?: string; // For url-test
 }
 
+/**
+ * 代理成员的结构化类型（可选使用）
+ * 用于需要区分不同成员类型的场景
+ */
+export type ProxyMember =
+  | { kind: "group"; name: string } // []GroupName
+  | { kind: "regex"; pattern: string } // .* or other regex
+  | { kind: "special"; value: "DIRECT" | "REJECT" }
+  | { kind: "literal"; value: string }; // Other literals
+
+/**
+ * 解析代理成员字符串为结构化类型
+ */
+export function parseProxyMember(raw: string): ProxyMember {
+  if (raw.startsWith("[]")) {
+    const name = raw.slice(2);
+    if (name === "DIRECT" || name === "REJECT") {
+      return { kind: "special", value: name };
+    }
+    return { kind: "group", name };
+  }
+  if (raw.includes("*") || raw.includes("\\") || raw.startsWith("(")) {
+    return { kind: "regex", pattern: raw };
+  }
+  return { kind: "literal", value: raw };
+}
+
+/**
+ * 将结构化类型序列化回字符串
+ */
+export function stringifyProxyMember(member: ProxyMember): string {
+  switch (member.kind) {
+    case "group":
+      return "[]" + member.name;
+    case "special":
+      return "[]" + member.value;
+    case "regex":
+      return member.pattern;
+    case "literal":
+      return member.value;
+  }
+}
+
+/**
+ * 判断代理成员是否为组引用
+ */
+export function isGroupReference(raw: string): boolean {
+  return raw.startsWith("[]");
+}
+
+/**
+ * 从代理成员字符串提取组名（如果是组引用）
+ */
+export function extractGroupName(raw: string): string | null {
+  if (raw.startsWith("[]")) {
+    return raw.slice(2);
+  }
+  return null;
+}
+
 /** 代理组类型选项 */
 export const PROXY_GROUP_TYPES = [
   { value: "select", label: "手动选择", description: "手动切换节点" },

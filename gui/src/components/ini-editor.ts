@@ -1,6 +1,5 @@
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { repeat } from "lit/directives/repeat.js";
 import { StoreController } from "@nanostores/lit";
 import {
   actions,
@@ -16,6 +15,9 @@ import {
   groupStatsAtom,
   allRulesetsAtom,
   rulesetStatsAtom,
+  orphanReferencesAtom,
+  canUndoAtom,
+  canRedoAtom,
 } from "../stores/iniStore";
 import { type ProxyGroup, type Ruleset } from "../lib/ini-parser";
 import { designSystem } from "../styles/design-system";
@@ -26,7 +28,11 @@ import "./create-group-modal";
 import "./ruleset-card";
 import "./create-ruleset-modal";
 import "./tab-switcher";
+import "./rulesets-view";
+import "./groups-view";
+import "./filter-bar";
 import type { TabOption } from "./tab-switcher";
+import type { FilterOption } from "./filter-bar";
 
 // SVG Icons
 const iconCode = html`<svg
@@ -62,28 +68,6 @@ const iconSave = html`<svg
 >
   <path
     d="M219.31,72,184,36.69A15.86,15.86,0,0,0,172.69,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V83.31A15.86,15.86,0,0,0,219.31,72ZM168,208H88V152h80Zm40,0H184V152a16,16,0,0,0-16-16H88a16,16,0,0,0-16,16v56H48V48H172.69L208,83.31ZM160,72a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h56A8,8,0,0,1,160,72Z"
-  />
-</svg>`;
-const iconCaretRight = html`<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="14"
-  height="14"
-  fill="currentColor"
-  viewBox="0 0 256 256"
->
-  <path
-    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"
-  />
-</svg>`;
-const iconCaretDown = html`<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="14"
-  height="14"
-  fill="currentColor"
-  viewBox="0 0 256 256"
->
-  <path
-    d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"
   />
 </svg>`;
 const iconPlus = html`<svg
@@ -199,6 +183,9 @@ export class IniEditor extends LitElement {
   @state()
   private filterType: "all" | "select" | "url-test" = "all";
 
+  @state()
+  private rulesetFilterType: "all" | "remote" | "builtin" | "local" = "all";
+
   // Ruleset State
   private _allRulesets = new StoreController(this, allRulesetsAtom);
   private _rulesetStats = new StoreController(this, rulesetStatsAtom);
@@ -208,6 +195,22 @@ export class IniEditor extends LitElement {
   }
   get rulesetStats() {
     return this._rulesetStats.value;
+  }
+
+  // Orphan References
+  private _orphanRefs = new StoreController(this, orphanReferencesAtom);
+  get orphanRefs() {
+    return this._orphanRefs.value;
+  }
+
+  // Undo/Redo State
+  private _canUndo = new StoreController(this, canUndoAtom);
+  private _canRedo = new StoreController(this, canRedoAtom);
+  get canUndo() {
+    return this._canUndo.value;
+  }
+  get canRedo() {
+    return this._canRedo.value;
   }
 
   @state()
@@ -266,45 +269,6 @@ export class IniEditor extends LitElement {
 
     // 仅在 sections (store value) 变化时重新解析 emoji
     this.parseEmojis();
-  }
-
-  private draggedGroup: { section: string; index: number } | null = null;
-
-  private handleGroupDragStart(e: DragEvent, section: string, index: number) {
-    this.draggedGroup = { section, index };
-    e.dataTransfer!.setData("application/x-clash-group", JSON.stringify({ section, index }));
-    e.dataTransfer!.effectAllowed = "move";
-    (e.target as HTMLElement).style.opacity = "0.4";
-  }
-
-  private handleGroupDragEnd(e: DragEvent) {
-    (e.target as HTMLElement).style.opacity = "";
-    this.draggedGroup = null;
-  }
-
-  private handleGroupDragOver(e: DragEvent, section: string, _index: number) {
-    if (e.dataTransfer?.types.includes("application/x-clash-group")) {
-      const data = this.draggedGroup;
-      if (data && data.section === section) {
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = "move";
-      }
-    }
-  }
-
-  private handleGroupDrop(e: DragEvent, section: string, dropIndex: number) {
-    e.preventDefault();
-    const cursorData = e.dataTransfer?.getData("application/x-clash-group");
-    if (cursorData) {
-      try {
-        const { section: srcSection, index: srcIndex } = JSON.parse(cursorData);
-        if (srcSection === section && srcIndex !== dropIndex) {
-          actions.reorderGroup(section, srcIndex, dropIndex);
-        }
-      } catch (e) {
-        console.error("Drop Parse Error", e);
-      }
-    }
   }
 
   private parseEmojis() {
@@ -499,39 +463,52 @@ export class IniEditor extends LitElement {
                 ></tab-switcher>
                 ${this.dashboardView === "groups"
                   ? html`
-                      <div class="stats-bar">
-                        <span
-                          class="stat-item total ${this.filterType === "all" ? "active" : ""}"
-                          @click=${() => (this.filterType = "all")}
-                          >全部: ${this.groupStats.total}</span
-                        >
-                        <span class="divider">·</span>
-                        <span
-                          class="stat-item type-select ${this.filterType === "select"
-                            ? "active"
-                            : ""}"
-                          @click=${() => (this.filterType = "select")}
-                          >手选: ${this.groupStats.byType["select"] || 0}</span
-                        >
-                        <span
-                          class="stat-item type-auto ${this.filterType === "url-test"
-                            ? "active"
-                            : ""}"
-                          @click=${() => (this.filterType = "url-test")}
-                          >自动: ${this.groupStats.byType["url-test"] || 0}</span
-                        >
-                      </div>
+                      <filter-bar
+                        .options=${[
+                          { id: "all", label: "全部", count: this.groupStats.total },
+                          {
+                            id: "select",
+                            label: "手选",
+                            count: this.groupStats.byType["select"] || 0,
+                            color: "#60a5fa",
+                          },
+                          {
+                            id: "url-test",
+                            label: "自动",
+                            count: this.groupStats.byType["url-test"] || 0,
+                            color: "#f472b6",
+                          },
+                        ] as FilterOption[]}
+                        .value=${this.filterType}
+                        @change=${(e: CustomEvent<{ value: string }>) =>
+                          (this.filterType = e.detail.value as "all" | "select" | "url-test")}
+                      ></filter-bar>
                     `
                   : html`
-                      <div class="stats-bar">
-                        <span class="stat-item"
-                          >远程: ${this.rulesetStats.byType["remote"] || 0}</span
-                        >
-                        <span class="divider">·</span>
-                        <span class="stat-item"
-                          >内置: ${this.rulesetStats.byType["builtin"] || 0}</span
-                        >
-                      </div>
+                      <filter-bar
+                        .options=${[
+                          { id: "all", label: "全部", count: this.rulesetStats.total },
+                          {
+                            id: "remote",
+                            label: "远程",
+                            count: this.rulesetStats.byType["remote"] || 0,
+                            color: "#34d399",
+                          },
+                          {
+                            id: "builtin",
+                            label: "内置",
+                            count: this.rulesetStats.byType["builtin"] || 0,
+                            color: "#a78bfa",
+                          },
+                        ] as FilterOption[]}
+                        .value=${this.rulesetFilterType}
+                        @change=${(e: CustomEvent<{ value: string }>) =>
+                          (this.rulesetFilterType = e.detail.value as
+                            | "all"
+                            | "remote"
+                            | "builtin"
+                            | "local")}
+                      ></filter-bar>
                     `}
               </div>
               <div class="preview-actions">
@@ -562,6 +539,21 @@ export class IniEditor extends LitElement {
                 </div>
               </div>
             </div>
+            ${this.orphanRefs.length > 0
+              ? html`
+                  <div class="orphan-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <span
+                      >发现 ${this.orphanRefs.length} 个悬空引用：
+                      ${this.orphanRefs
+                        .slice(0, 3)
+                        .map((o) => `"${o.orphanRef}"`)
+                        .join(", ")}
+                      ${this.orphanRefs.length > 3 ? ` 等 ${this.orphanRefs.length} 个` : ""}
+                    </span>
+                  </div>
+                `
+              : ""}
             <div class="preview-content">
               ${this.isLoading
                 ? html`<div class="loading-overlay">
@@ -608,131 +600,35 @@ export class IniEditor extends LitElement {
       return this.renderRulesetsView();
     }
     return html`
-      <div
-        class="sections"
+      <groups-view
+        .sections=${this.sections}
+        .searchTerm=${this.searchTerm}
+        .filterType=${this.filterType}
+        .collapsedSections=${this.collapsedSections}
+        @toggle-section=${(e: CustomEvent<{ name: string }>) => this.toggleSection(e.detail.name)}
+        @reorder-group=${(
+          e: CustomEvent<{ sectionName: string; oldIndex: number; newIndex: number }>
+        ) => actions.reorderGroup(e.detail.sectionName, e.detail.oldIndex, e.detail.newIndex)}
         @update-group=${this.handleUpdateGroup}
         @edit-group=${this.handleEditGroup}
         @delete-group=${this.handleDeleteGroup}
         @duplicate-group=${this.handleDuplicateGroup}
         @add-to-all=${this.handleAddToAll}
         @remove-from-all=${this.handleRemoveFromAll}
-      >
-        ${repeat(
-          this.sections,
-          (section) => section.name,
-          (section) => {
-            // 隐藏 Global section（只包含注释，无实际内容）
-            if (section.name.toLowerCase() === "global") return "";
-
-            // Filter groups based on search and type filter
-            const filteredGroups = section.proxyGroups.filter((g) => {
-              const matchesSearch =
-                this.searchTerm === "" || g.name.toLowerCase().includes(this.searchTerm);
-              const matchesType = this.filterType === "all" || g.type === this.filterType;
-              return matchesSearch && matchesType;
-            });
-
-            if (filteredGroups.length === 0 && section.rulesets.length === 0) return "";
-
-            const isCollapsed = this.collapsedSections.has(section.name);
-            const gridId = `group-grid-${section.name}`;
-
-            return html`
-              <div class="section">
-                <h4 class="section-title" @click=${() => this.toggleSection(section.name)}>
-                  ${isCollapsed ? iconCaretRight : iconCaretDown} [${section.name}]
-                </h4>
-
-                ${!isCollapsed
-                  ? html`
-                      ${filteredGroups.length > 0
-                        ? html`
-                            <div class="group-grid" id="${gridId}">
-                              ${repeat(
-                                filteredGroups,
-                                (group) => group.name,
-                                (group, index) => html`
-                                  <proxy-group-card
-                                    .group=${group}
-                                    .highlightTerm=${this.searchTerm}
-                                    draggable="true"
-                                    @dragstart=${(e: DragEvent) =>
-                                      this.handleGroupDragStart(e, section.name, index)}
-                                    @dragend=${this.handleGroupDragEnd}
-                                    @dragover=${(e: DragEvent) =>
-                                      this.handleGroupDragOver(e, section.name, index)}
-                                    @drop=${(e: DragEvent) =>
-                                      this.handleGroupDrop(e, section.name, index)}
-                                  ></proxy-group-card>
-                                `
-                              )}
-                            </div>
-                          `
-                        : ""}
-                      ${section.rulesets.length > 0 && this.searchTerm === ""
-                        ? html`
-                            <div class="ruleset-container">
-                              <h5 class="subsection-title">Rule Sets</h5>
-                              <div class="ruleset-list">
-                                ${repeat(
-                                  section.rulesets,
-                                  (rule) => rule.name,
-                                  (rule) => html`
-                                    <div class="ruleset-item">
-                                      <span class="ruleset-name">${rule.name}</span>
-                                      <span class="badge">${rule.type}</span>
-                                    </div>
-                                  `
-                                )}
-                              </div>
-                            </div>
-                          `
-                        : ""}
-                    `
-                  : ""}
-              </div>
-            `;
-          }
-        )}
-      </div>
+      ></groups-view>
     `;
   }
 
   /** 渲染规则列表视图 */
   renderRulesetsView() {
-    const filteredRulesets = this.allRulesets.filter(
-      (r) =>
-        this.searchTerm === "" ||
-        r.name.toLowerCase().includes(this.searchTerm) ||
-        r.source.toLowerCase().includes(this.searchTerm)
-    );
-
-    if (filteredRulesets.length === 0) {
-      return html`
-        <div class="empty-state">
-          <span>暂无规则</span>
-        </div>
-      `;
-    }
-
     return html`
-      <div
-        class="rulesets-list"
+      <rulesets-view
+        .rulesets=${this.allRulesets}
+        .searchTerm=${this.searchTerm}
+        .filterType=${this.rulesetFilterType}
         @edit-ruleset=${this.handleEditRuleset}
         @delete-ruleset=${this.handleDeleteRuleset}
-      >
-        ${repeat(
-          filteredRulesets,
-          (r, i) => r.source + i,
-          (ruleset, index) => html`
-            <ruleset-card
-              .ruleset=${ruleset}
-              .highlightTerm=${this.searchTerm}
-              .index=${index}
-            ></ruleset-card>
-          `
-        )}
-      </div>
+      ></rulesets-view>
     `;
   }
 
@@ -980,6 +876,21 @@ export class IniEditor extends LitElement {
 
       .divider {
         color: rgba(255, 255, 255, 0.2);
+      }
+
+      /* 悬空引用警告 */
+      .orphan-warning {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(245, 158, 11, 0.15);
+        border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+        color: #fbbf24;
+        font-size: 0.8rem;
+      }
+      .orphan-warning .warning-icon {
+        font-size: 1rem;
       }
 
       .search-wrapper {

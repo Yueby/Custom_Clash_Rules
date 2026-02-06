@@ -231,16 +231,16 @@ export class RulesetCard extends LitElement {
         font-weight: 500;
       }
       .type-badge.remote {
-        background: rgba(96, 165, 250, 0.15);
-        color: #60a5fa;
+        background: var(--color-type-remote-bg);
+        color: var(--color-type-remote);
       }
       .type-badge.builtin {
-        background: rgba(168, 85, 247, 0.15);
-        color: #a855f7;
+        background: var(--color-type-builtin-bg);
+        color: var(--color-type-builtin);
       }
       .type-badge.local {
-        background: rgba(34, 197, 94, 0.15);
-        color: #22c55e;
+        background: var(--color-type-local-bg);
+        color: var(--color-type-local);
       }
       .source {
         font-size: 0.8rem;
